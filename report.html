@@ -284,8 +284,7 @@
      Response: { status: "logged" | "escalated", report_count }
    ========================================================= */
 const USE_MOCK = false;
-const API_BASE = "http://localhost:8000";
-/* ---------- pick up context from scanner page ---------- */
+const API_BASE = "https://shielding-the-self.onrender.com";/* ---------- pick up context from scanner page ---------- */
 const params = new URLSearchParams(window.location.search);
 const carriedCode =
 params.get("qr")
