@@ -283,4 +283,10 @@ import os
 from fastapi.staticfiles import StaticFiles
 
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+# Auto-seed demo products on first deploy
+from seed import seed as seed_basic
+from seed_50 import seed as seed_50
+
+seed_basic()
+seed_50()
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
