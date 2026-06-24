@@ -28,6 +28,28 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Shielding the Shelf API")
 
+
+@app.on_event("startup")
+def auto_seed_products():
+    """
+    Runs both seed.py (the small basic demo set, including the
+    guaranteed-FAKE demo code SENS-FAKE-01) and seed_50.py (the full
+    250-product catalog) on every startup. Both seed() functions are
+    idempotent — safe to run on every deploy/restart, since they only
+    insert products that don't already exist by qr_code_id. This keeps
+    the database in sync with whatever's in these files with zero
+    manual steps (important for Render, where the free plan has no
+    shell access to run scripts by hand).
+    """
+    try:
+        import seed as seed_basic_module
+        import seed_50 as seed_50_module
+        seed_basic_module.seed()
+        seed_50_module.seed()
+    except Exception as e:
+        # Don't crash the whole app if seeding hiccups — log and continue.
+        print(f"[startup seeding] skipped due to error: {e}")
+
 # Wide-open CORS for hackathon/demo purposes — tighten this before any real deployment.
 app.add_middleware(
     CORSMiddleware,
@@ -283,10 +305,4 @@ import os
 from fastapi.staticfiles import StaticFiles
 
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-# Auto-seed demo products on first deploy
-from seed import seed as seed_basic
-from seed_50 import seed as seed_50
-
-seed_basic()
-seed_50()
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
