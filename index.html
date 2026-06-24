@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shielding The Shelf — Scan a product</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Archivo:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<style>
+  :root {
+    --ink: #0B1210;
+    --paper: #EFEBDF;
+    --card: #F7F4EA;
+    --verified: #1F7A5C;
+    --verified-dark: #0F4A37;
+    --alert: #B23A2E;
+    --alert-dark: #6E1F17;
+    --brass: #8B6F3F;
+    --line: rgba(11, 18, 16, 0.14);
+    --line-strong: rgba(11, 18, 16, 0.3);
+    --muted: rgba(11, 18, 16, 0.55);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+
+  .app {
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--paper);
+    position: relative;
+  }
+
+  /* ---------- Header ---------- */
+  .topbar {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .brand-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  .brand {
+    font-family: 'Archivo', sans-serif;
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: 0.01em;
+  }
+
+  .brand-mark {
+    color: var(--brass);
+  }
+
+  .status-pill {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border: 1px solid var(--line-strong);
+    border-radius: 3px;
+    padding: 3px 7px;
+    text-transform: uppercase;
+  }
+
+  .subtitle {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* ---------- Scanner viewport ---------- */
+  .scan-stage {
+    padding: 28px 24px 8px;
+  }
+
+  .viewfinder {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    background: #05080A;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+  }
+
+  .viewfinder video, .viewfinder .feed-placeholder {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .feed-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(239,235,223,0.35);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-align: center;
+    padding: 20px;
+  }
+
+  /* corner brackets */
+  .bracket {
+    position: absolute;
+    width: 34px;
+    height: 34px;
+    border: 2.5px solid #E8E0C8;
+    opacity: 0.85;
+  }
+  .bracket.tl { top: 18px; left: 18px; border-right: none; border-bottom: none; }
+  .bracket.tr { top: 18px; right: 18px; border-left: none; border-bottom: none; }
+  .bracket.bl { bottom: 18px; left: 18px; border-right: none; border-top: none; }
+  .bracket.br { bottom: 18px; right: 18px; border-left: none; border-top: none; }
+
+  /* scan line animation */
+  .scanline {
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #5DCAA5, transparent);
+    box-shadow: 0 0 6px 1px rgba(93, 202, 165, 0.6);
+    animation: sweep 2.6s ease-in-out infinite;
+  }
+
+  @keyframes sweep {
+    0%   { top: 18px; opacity: 0.2; }
+    50%  { top: calc(100% - 20px); opacity: 1; }
+    100% { top: 18px; opacity: 0.2; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scanline { animation: none; top: 50%; opacity: 0.6; }
+  }
+
+  .reticle-label {
+    position: absolute;
+    bottom: 10px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: rgba(239,235,223,0.55);
+    text-transform: uppercase;
+  }
+
+  .scan-hint {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  /* ---------- Manual entry ---------- */
+  .manual-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .manual-row input {
+    flex: 1;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    padding: 11px 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: 3px;
+    background: var(--card);
+    color: var(--ink);
+  }
+
+  .manual-row input::placeholder {
+    color: var(--muted);
+  }
+
+  /* ---------- Location row ---------- */
+  .location-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .location-row input {
+    flex: 1;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    padding: 11px 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: 3px;
+    background: var(--card);
+    color: var(--ink);
+  }
+
+  .location-row input::placeholder {
+    color: var(--muted);
+  }
+
+  .geo-status-msg {
+    margin-top: 6px;
+    font-size: 11.5px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .geo-status-msg.err {
+    color: var(--alert-dark);
+  }
+
+  .btn-secondary {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 11px 16px;
+    background: transparent;
+    border: 1px solid var(--line-strong);
+    border-radius: 3px;
+    color: var(--ink);
+    cursor: pointer;
+  }
+
+  .btn-secondary:hover {
+    background: rgba(11,18,16,0.05);
+  }
+
+  /* ---------- Result card ---------- */
+  .result-wrap {
+    padding: 18px 24px 8px;
+    flex: 1;
+  }
+
+  .result-card {
+    border-radius: 4px;
+    padding: 20px;
+    border: 1px solid var(--line-strong);
+    background: var(--card);
+    display: none;
+  }
+
+  .result-card.show { display: block; animation: stamp 0.28s ease-out; }
+
+  @keyframes stamp {
+    0%   { transform: scale(1.05) rotate(-0.5deg); opacity: 0; }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+
+  .result-card.verified { border-color: var(--verified); background: #E9F2EC; }
+  .result-card.flagged  { border-color: var(--alert); background: #F6E9E6; }
+
+  .result-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .seal {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .seal svg { width: 18px; height: 18px; }
+
+  .result-card.verified .seal,
+  .result-card.verified .result-title { color: var(--verified-dark); }
+
+  .result-card.flagged .seal,
+  .result-card.flagged .result-title { color: var(--alert-dark); }
+
+  .result-title {
+    font-family: 'Archivo', sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+  }
+
+  .result-sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .detail-table {
+    width: 100%;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+    font-size: 13px;
+  }
+
+  .detail-table tr td {
+    padding: 5px 0;
+  }
+
+  .detail-table tr td:first-child {
+    color: var(--muted);
+    width: 42%;
+  }
+
+  .detail-table tr td:last-child {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    text-align: right;
+  }
+
+  .reason-box {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 3px;
+    background: rgba(178,58,46,0.08);
+    border: 1px solid rgba(178,58,46,0.25);
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--alert-dark);
+  }
+
+  .result-actions {
+    margin-top: 16px;
+    display: flex;
+    gap: 10px;
+  }
+
+  .btn-report {
+    flex: 1;
+    font-family: 'Archivo', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 12px 14px;
+    background: var(--alert);
+    color: #FBF3EF;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    display: none;
+  }
+
+  .btn-report.show { display: block; }
+
+  .btn-report:hover { background: var(--alert-dark); }
+
+  .btn-dismiss {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 12px 14px;
+    background: transparent;
+    border: 1px solid var(--line-strong);
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--ink);
+  }
+
+  /* ---------- Footer nav ---------- */
+  .footnav {
+    padding: 14px 24px 22px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  .footnav a {
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px solid var(--line-strong);
+  }
+
+  /* ---------- Toast ---------- */
+  .toast {
+    position: absolute;
+    bottom: 78px;
+    left: 24px;
+    right: 24px;
+    background: var(--ink);
+    color: var(--paper);
+    font-size: 12.5px;
+    padding: 11px 14px;
+    border-radius: 4px;
+    text-align: center;
+    transform: translateY(10px);
+    opacity: 0;
+    transition: all 0.25s ease;
+    pointer-events: none;
+  }
+
+  .toast.show {
+    transform: translateY(0);
+    opacity: 1;
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand-row">
+      <div class="brand"><span class="brand-mark">&#9670;</span> Shielding the Shelf</div>
+      <div class="status-pill" id="net-status">Live</div>
+    </div>
+    <div class="subtitle">Point your camera at the product QR code</div>
+  </div>
+
+  <div class="scan-stage">
+    <div class="viewfinder" id="viewfinder">
+      <div class="feed-placeholder">
+        CAMERA FEED<br>requires HTTPS or localhost
+      </div>
+      <div class="bracket tl"></div>
+      <div class="bracket tr"></div>
+      <div class="bracket bl"></div>
+      <div class="bracket br"></div>
+      <div class="scanline" id="scanline"></div>
+      <div class="reticle-label">align code within frame</div>
+    </div>
+    <div class="scan-hint">Hold steady — detection is automatic</div>
+
+    <div class="manual-row">
+      <input type="text" id="manualCode" placeholder="or enter code manually, e.g. SEN-44291-A">
+      <button class="btn-secondary" id="manualSubmit">Check</button>
+    </div>
+
+    <div class="location-row">
+      <input type="text" id="cityInput" placeholder="Detecting location…">
+      <button class="btn-secondary" id="redetectBtn">📍 Redetect</button>
+    </div>
+    <div class="geo-status-msg" id="geoStatusMsg">Detecting your location…</div>
+  </div>
+
+  <div class="result-wrap">
+    <div class="result-card" id="resultCard">
+      <div class="result-head">
+        <div class="seal" id="resultSeal"></div>
+        <div>
+          <div class="result-title" id="resultTitle">—</div>
+          <div class="result-sub" id="resultSub">—</div>
+        </div>
+      </div>
+
+      <table class="detail-table">
+        <tr><td>Brand</td><td id="dBrand">—</td></tr>
+        <tr><td>Batch number</td><td id="dBatch">—</td></tr>
+        <tr><td>Scan location</td><td id="dCity">—</td></tr>
+        <tr><td>Total scans</td><td id="dScans">—</td></tr>
+      </table>
+
+      <div class="reason-box" id="reasonBox" style="display:none;"></div>
+
+      <div class="result-actions">
+        <button class="btn-report" id="btnReport">Report this shopkeeper</button>
+        <button class="btn-dismiss" id="btnDismiss">Scan again</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnav">
+    <a href="report.html" id="navReport">Report a shop</a>
+    <a href="dashboard.html" id="navDash">Admin dashboard</a>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+</div>
+
+<script>
+  // ---------------------------------------------------------------
+  // CONFIG — swap this to your friend's real FastAPI base URL later.
+  // Everything else stays exactly the same.
+  // ---------------------------------------------------------------
+  const USE_MOCK = false;
+  const API_BASE = "http://localhost:8000";
+  const el = (id) => document.getElementById(id);
+  const resultCard = el('resultCard');
+  const toast = el('toast');
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2400);
+  }
+
+  let capturedLat = null;
+  let capturedLng = null;
+
+  async function detectCity() {
+    const cityInput = el('cityInput');
+    const statusMsg = el('geoStatusMsg');
+
+    if (!navigator.geolocation) {
+      statusMsg.textContent = "Geolocation not supported on this device — type a city manually.";
+      statusMsg.classList.add('err');
+      cityInput.placeholder = "Type a city, e.g. Ranchi";
+      return;
+    }
+
+    statusMsg.textContent = "Detecting your location…";
+    statusMsg.classList.remove('err');
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        capturedLat = pos.coords.latitude;
+        capturedLng = pos.coords.longitude;
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${capturedLat}&lon=${capturedLng}`
+          );
+          const data = await res.json();
+          const addr = data.address || {};
+          const city = addr.city || addr.town || addr.village || addr.county || addr.state_district || addr.state || "Unknown";
+          cityInput.value = city;
+          statusMsg.textContent = "Location captured. Edit the city above to simulate a different location for testing.";
+          statusMsg.classList.remove('err');
+        } catch (e) {
+          statusMsg.textContent = "Got your GPS but couldn't resolve a city name — type one manually.";
+          statusMsg.classList.add('err');
+        }
+      },
+      (err) => {
+        statusMsg.textContent = "Location permission denied — type a city manually to continue.";
+        statusMsg.classList.add('err');
+        cityInput.placeholder = "Type a city, e.g. Ranchi";
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  }
+
+  el('redetectBtn').addEventListener('click', detectCity);
+
+  function getCity() {
+    const cityInput = el('cityInput');
+    return (cityInput.value || '').trim() || 'Unknown';
+  }
+
+  function mockScanResponse(qrCode) {
+    // Deterministic-ish mock: codes containing "FAKE" or a 1-in-3 random chance flag as anomalous
+    const forceFake = qrCode.toUpperCase().includes("FAKE");
+    const isFake = forceFake || Math.random() < 0.35;
+    const scanCount = isFake ? (Math.floor(Math.random() * 30) + 11) : (Math.floor(Math.random() * 6) + 1);
+    const uniqueCities = isFake ? (Math.floor(Math.random() * 4) + 3) : 1;
+
+    return {
+      status: isFake ? "FAKE" : "SAFE",
+      brand: "Sensodyne",
+      product_name: "Repair & Protect 100g",
+      batch_number: qrCode.toUpperCase(),
+      scan_count: scanCount,
+      unique_cities: uniqueCities,
+      reason: isFake
+        ? `This code has been scanned ${scanCount} times across ${uniqueCities} different cities in the last 2 hours. A genuine unit cannot move that fast.`
+        : null
+    };
+  }
+
+  async function callScanEndpoint(qrCode) {
+    const city = getCity();
+    const payload = { qr_code_id: qrCode, city: city, latitude: capturedLat, longitude: capturedLng };
+
+    if (USE_MOCK) {
+      await new Promise(r => setTimeout(r, 550)); // simulate network latency
+      const data = mockScanResponse(qrCode);
+      data._city = city;
+      return data;
+    }
+
+    const res = await fetch(`${API_BASE}/scan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error("Scan request failed");
+    const data = await res.json();
+    data._city = city;
+    return data;
+  }
+
+  function renderResult(data, scannedCode) {
+    const isFake = data.status === "FAKE";
+    resultCard.className = "result-card show " + (isFake ? "flagged" : "verified");
+
+    el('resultSeal').innerHTML = isFake
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 2.7 17a1.9 1.9 0 0 0 1.6 2.9h15.4a1.9 1.9 0 0 0 1.6-2.9L13.7 3.9a1.9 1.9 0 0 0-3.4 0Z"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>';
+
+    el('resultTitle').textContent = isFake ? "Likely counterfeit" : "Genuine product";
+    el('resultSub').textContent = isFake
+      ? "Scan pattern is inconsistent with a single unit"
+      : "No anomalies detected in scan history";
+
+    el('dBrand').textContent = data.brand;
+    el('dBatch').textContent = data.batch_number || scannedCode;
+    el('dCity').textContent = data._city;
+    el('dScans').textContent = `${data.scan_count} scans · ${data.unique_cities} cities`;
+
+    const reasonBox = el('reasonBox');
+    if (isFake) {
+      reasonBox.style.display = 'block';
+      reasonBox.textContent = data.reason;
+    } else {
+      reasonBox.style.display = 'none';
+    }
+
+    el('btnReport').className = 'btn-report' + (isFake ? ' show' : '');
+    // Use the QR code that was actually scanned, not data.batch_number —
+    // the backend's batch_number is a product attribute, not guaranteed to
+    // equal the scanned code, and report.html needs the real qr_code_id.
+    resultCard.dataset.qr = scannedCode;
+  }
+
+  async function handleScan(qrCode) {
+    if (!qrCode || !qrCode.trim()) {
+      showToast("Enter or scan a code first");
+      return;
+    }
+    const trimmed = qrCode.trim();
+    scanningActive = false; // pause camera detection until result is dismissed
+    showToast("Checking scan pattern…");
+    try {
+      const data = await callScanEndpoint(trimmed);
+      renderResult(data, trimmed);
+    } catch (err) {
+      showToast("Could not reach the server. Try again.");
+      scanningActive = true; // resume on failure so the user isn't stuck
+    }
+  }
+
+  el('manualSubmit').addEventListener('click', () => {
+    handleScan(el('manualCode').value);
+  });
+
+  el('manualCode').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleScan(el('manualCode').value);
+  });
+
+  el('btnDismiss').addEventListener('click', () => {
+    resultCard.className = 'result-card';
+    el('manualCode').value = '';
+    scanningActive = true; // resume live camera detection
+  });
+
+  el('btnReport').addEventListener('click', () => {
+    const qr = resultCard.dataset.qr || '';
+    window.location.href = `report.html?qr=${encodeURIComponent(qr)}`;
+  });
+
+  // --- Live camera QR scanning (jsQR) ---
+  let scanningActive = false;
+  let qrCanvas = null;
+  let qrCtx = null;
+
+  function setupQrCanvas() {
+    if (qrCanvas) return;
+    qrCanvas = document.createElement('canvas');
+    qrCtx = qrCanvas.getContext('2d', { willReadFrequently: true });
+  }
+
+  function tickScan(video) {
+    if (scanningActive && video.readyState === video.HAVE_ENOUGH_DATA) {
+      qrCanvas.width = video.videoWidth;
+      qrCanvas.height = video.videoHeight;
+      qrCtx.drawImage(video, 0, 0, qrCanvas.width, qrCanvas.height);
+
+      try {
+        const imageData = qrCtx.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
+        const code = window.jsQR
+          ? window.jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" })
+          : null;
+
+        if (code && code.data) {
+          showToast("QR detected — checking…");
+          handleScan(code.data); // this sets scanningActive = false internally
+          requestAnimationFrame(() => tickScan(video));
+          return;
+        }
+      } catch (e) {
+        // getImageData can throw on the very first frames before the video is sized — ignore and keep trying.
+      }
+    }
+    requestAnimationFrame(() => tickScan(video));
+  }
+
+  async function tryStartCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      const viewfinder = el('viewfinder');
+      const placeholder = viewfinder.querySelector('.feed-placeholder');
+      const video = document.createElement('video');
+      video.autoplay = true; video.muted = true; video.playsInline = true;
+      video.srcObject = stream;
+      viewfinder.insertBefore(video, placeholder);
+      placeholder.remove();
+
+      setupQrCanvas();
+      scanningActive = true;
+      tickScan(video);
+    } catch (e) {
+      // camera denied or unavailable — placeholder + manual entry remains usable
+    }
+  }
+
+  tryStartCamera();
+  detectCity();
+</script>
+
+</body>
+</html>

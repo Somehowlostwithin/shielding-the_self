@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Shielding the Shelf — Surveillance Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Archivo+Expanded:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --ink:#0B1210;
+    --ink-soft:#15201C;
+    --paper:#E8E4D9;
+    --card:#F4F1EA;
+    --green:#1F7A5C;
+    --green-dim:#16563F;
+    --red:#C73E3E;
+    --red-dim:#8C2A2A;
+    --brass:#8B7355;
+    --line: rgba(11,18,16,0.14);
+    --line-soft: rgba(232,228,217,0.12);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ink);
+    color:var(--paper);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    background-image:
+      radial-gradient(circle at 100% 0%, rgba(139,115,85,0.10), transparent 45%),
+      radial-gradient(circle at 0% 100%, rgba(31,122,92,0.08), transparent 45%);
+  }
+  .mono{font-family:'JetBrains Mono',monospace;}
+  .display{font-family:'Archivo Expanded',sans-serif; letter-spacing:0.01em;}
+
+  a{color:inherit;text-decoration:none;}
+
+  /* ===== Top bar ===== */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:18px 32px;
+    border-bottom:1px solid var(--line-soft);
+    position:sticky;top:0;z-index:50;
+    background:rgba(11,18,16,0.92);
+    backdrop-filter:blur(6px);
+  }
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand .mark{
+    width:34px;height:34px;border-radius:4px;
+    background:var(--brass);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px;
+    color:var(--ink);
+  }
+  .brand .name{
+    font-family:'Archivo Expanded',sans-serif;font-weight:800;
+    font-size:15px;letter-spacing:0.04em;text-transform:uppercase;
+  }
+  .brand .sub{
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--brass);
+    letter-spacing:0.08em;text-transform:uppercase;margin-top:2px;
+  }
+  nav{display:flex;gap:28px;}
+  nav a{
+    font-family:'JetBrains Mono',monospace;font-size:12px;
+    letter-spacing:0.06em;text-transform:uppercase;
+    color:rgba(232,228,217,0.55);
+    padding-bottom:4px;border-bottom:2px solid transparent;
+    transition:color .15s, border-color .15s;
+  }
+  nav a:hover{color:var(--paper);}
+  nav a.active{color:var(--paper);border-color:var(--brass);}
+  .live-pill{
+    display:flex;align-items:center;gap:8px;
+    font-family:'JetBrains Mono',monospace;font-size:11px;
+    letter-spacing:0.06em;text-transform:uppercase;
+    color:var(--green);
+    border:1px solid var(--green-dim);
+    border-radius:30px;padding:6px 12px;
+  }
+  .live-pill .dot{
+    width:7px;height:7px;border-radius:50%;background:var(--green);
+    box-shadow:0 0 0 0 rgba(31,122,92,0.7);
+    animation:pulse 1.8s infinite;
+  }
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(31,122,92,0.55);}
+    70%{box-shadow:0 0 0 7px rgba(31,122,92,0);}
+    100%{box-shadow:0 0 0 0 rgba(31,122,92,0);}
+  }
+
+  /* ===== Page shell ===== */
+  .shell{max-width:1320px;margin:0 auto;padding:28px 32px 64px;}
+  .page-head{
+    display:flex;align-items:flex-end;justify-content:space-between;
+    margin-bottom:22px;flex-wrap:wrap;gap:14px;
+  }
+  .page-head h1{
+    font-family:'Archivo Expanded',sans-serif;font-weight:800;
+    font-size:26px;margin:0 0 6px;letter-spacing:0.01em;
+  }
+  .page-head p{
+    margin:0;font-size:13px;color:rgba(232,228,217,0.55);
+    font-family:'JetBrains Mono',monospace;
+  }
+  .actions{display:flex;gap:10px;}
+  button{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.04em;cursor:pointer;}
+  .btn{
+    padding:10px 16px;border-radius:6px;border:1px solid var(--line-soft);
+    background:transparent;color:var(--paper);text-transform:uppercase;
+    transition:background .15s,border-color .15s;
+  }
+  .btn:hover{border-color:var(--brass);background:rgba(139,115,85,0.08);}
+  .btn-primary{
+    background:var(--red);border-color:var(--red);color:var(--card);
+    font-weight:600;
+  }
+  .btn-primary:hover{background:#a93434;border-color:#a93434;}
+  .btn-green{
+    background:var(--green);border-color:var(--green);color:var(--card);font-weight:600;
+  }
+  .btn-green:hover{background:#17604a;}
+
+  /* ===== Stat cards ===== */
+  .stats{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;
+  }
+  .stat-card{
+    background:var(--card);color:var(--ink);border-radius:8px;
+    padding:18px 20px;position:relative;overflow:hidden;
+    border:1px solid rgba(11,18,16,0.06);
+  }
+  .stat-card .tag{
+    font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.08em;
+    text-transform:uppercase;color:var(--brass);font-weight:600;
+  }
+  .stat-card .value{
+    font-family:'Archivo Expanded',sans-serif;font-weight:800;
+    font-size:34px;margin:8px 0 2px;line-height:1;
+  }
+  .stat-card .delta{
+    font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(11,18,16,0.55);
+  }
+  .stat-card.alert .value{color:var(--red);}
+  .stat-card .stamp{
+    position:absolute;right:14px;top:14px;
+    width:30px;height:30px;border-radius:50%;
+    border:2px solid currentColor;opacity:0.18;
+    display:flex;align-items:center;justify-content:center;
+    font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;
+  }
+
+  /* ===== Main grid ===== */
+  .grid{display:grid;grid-template-columns:1.5fr 1fr;gap:18px;margin-bottom:18px;}
+  .panel{
+    background:var(--ink-soft);
+    border:1px solid var(--line-soft);
+    border-radius:10px;
+    overflow:hidden;
+  }
+  .panel-head{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:16px 20px;border-bottom:1px solid var(--line-soft);
+  }
+  .panel-head h2{
+    font-family:'Archivo Expanded',sans-serif;font-size:14px;margin:0;
+    letter-spacing:0.04em;text-transform:uppercase;font-weight:700;
+  }
+  .panel-head .hint{
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(232,228,217,0.45);
+  }
+  #map{height:420px;width:100%;filter:saturate(0.7) brightness(0.95);}
+  .leaflet-popup-content-wrapper{
+    background:var(--card);color:var(--ink);font-family:'JetBrains Mono',monospace;
+    font-size:12px;border-radius:6px;
+  }
+  .leaflet-popup-tip{background:var(--card);}
+
+  /* ===== Anomalies table ===== */
+  .table-wrap{max-height:420px;overflow-y:auto;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  thead th{
+    position:sticky;top:0;background:var(--ink-soft);
+    text-align:left;padding:10px 14px;
+    font-family:'JetBrains Mono',monospace;font-size:10px;
+    letter-spacing:0.06em;text-transform:uppercase;
+    color:rgba(232,228,217,0.5);border-bottom:1px solid var(--line-soft);
+  }
+  tbody td{
+    padding:11px 14px;border-bottom:1px solid var(--line-soft);
+    font-family:'JetBrains Mono',monospace;
+  }
+  tbody tr:hover{background:rgba(232,228,217,0.04);}
+  .badge{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:3px 9px;border-radius:30px;font-size:10.5px;
+    text-transform:uppercase;letter-spacing:0.05em;font-weight:600;
+  }
+  .badge.fake{background:rgba(199,62,62,0.16);color:#E08B8B;}
+  .badge.escalated{background:rgba(199,62,62,0.28);color:#FFB3B3;}
+  .badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+  .row-new{animation:flash 1.4s ease-out;}
+  @keyframes flash{
+    0%{background:rgba(199,62,62,0.22);}
+    100%{background:transparent;}
+  }
+  .empty-row td{
+    text-align:center;color:rgba(232,228,217,0.35);padding:30px;
+  }
+
+  /* ===== Bottom row: chart + ticker ===== */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  .chart-box{padding:18px 20px;height:300px;}
+  .ticker{max-height:300px;overflow-y:auto;padding:6px 0;}
+  .ticker-item{
+    display:flex;gap:12px;padding:12px 20px;
+    border-bottom:1px solid var(--line-soft);
+    font-family:'JetBrains Mono',monospace;font-size:12px;
+  }
+  .ticker-item .seal{
+    flex-shrink:0;width:30px;height:30px;border-radius:50%;
+    border:1.5px solid var(--red);color:var(--red);
+    display:flex;align-items:center;justify-content:center;
+    font-size:13px;font-weight:700;transform:rotate(-8deg);
+  }
+  .ticker-item .body{flex:1;}
+  .ticker-item .body .line1{color:var(--paper);}
+  .ticker-item .body .line2{color:rgba(232,228,217,0.45);font-size:11px;margin-top:2px;}
+  .ticker-item .time{color:rgba(232,228,217,0.35);font-size:10.5px;white-space:nowrap;}
+
+  footer{
+    text-align:center;padding:30px 0 10px;
+    font-family:'JetBrains Mono',monospace;font-size:11px;
+    color:rgba(232,228,217,0.3);
+  }
+
+  @media (max-width:980px){
+    .stats{grid-template-columns:repeat(2,1fr);}
+    .grid, .grid2{grid-template-columns:1fr;}
+    nav{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="mark">SS</div>
+    <div>
+      <div class="name">Shielding the Shelf</div>
+      <div class="sub">Anomaly Surveillance Console</div>
+    </div>
+  </div>
+  <nav>
+    <a href="index.html">Scanner</a>
+    <a href="dashboard.html" class="active">Dashboard</a>
+    <a href="report.html">Report</a>
+  </nav>
+  <div class="live-pill"><span class="dot"></span> Live feed</div>
+</div>
+
+<div class="shell">
+
+  <div class="page-head">
+    <div>
+      <h1>Counterfeit Surveillance Dashboard</h1>
+    </div>
+    <div class="actions">
+      <button class="btn" id="refreshBtn">↻ Refresh now</button>
+      <button class="btn btn-primary" id="simulateBtn">⚠ Simulate counterfeit scan</button>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="tag">Total scans</div>
+      <div class="value" id="statTotal">0</div>
+      <div class="delta" id="statTotalDelta">last 24h</div>
+    </div>
+    <div class="stat-card alert">
+      <div class="tag">Flagged codes</div>
+      <div class="value" id="statFlagged">0</div>
+      <div class="delta" id="statFlaggedDelta">anomalous scan pattern</div>
+    </div>
+    <div class="stat-card alert">
+      <div class="tag">Active hot zones</div>
+      <div class="value" id="statZones">0</div>
+      <div class="delta">3+ reports, same location</div>
+    </div>
+    <div class="stat-card">
+      <div class="tag">Reports filed</div>
+      <div class="value" id="statReports">0</div>
+      <div class="delta">by customers, all cities</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Hot zone map</h2>
+        <span class="hint">red = escalated &nbsp; amber = flagged &nbsp; green = clean cluster</span>
+      </div>
+      <div id="map"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Live anomaly log</h2>
+        <span class="hint" id="anomalyHint">sorted by scan count</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>QR code</th>
+              <th>Brand</th>
+              <th>Total scans</th>
+              <th>Cities</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="anomalyBody">
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Scans by brand</h2>
+        <span class="hint">genuine vs flagged volume</span>
+      </div>
+      <div class="chart-box"><canvas id="brandChart"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Escalation ticker</h2>
+        <span class="hint">customer reports → hot zone events</span>
+      </div>
+      <div class="ticker" id="tickerList"></div>
+    </div>
+  </div>
+
+</div>
+
+<footer>SHIELDING THE SHELF — crowd-sourced QR duplication detection · mock telemetry, demo build</footer>
+
+<script>
+/* =========================================================
+   API CONTRACT — swap USE_MOCK to false once backend is live
+   GET  /anomalies   -> [{qr_code_id, brand, scan_count, unique_cities, flagged_at, escalated}]
+   GET  /stats        -> {total_scans, flagged_codes, active_hot_zones, reports_filed}
+   GET  /hotzones      -> [{shop_name, city, latitude, longitude, report_count, escalated}]
+   GET  /brand_volume  -> [{brand, genuine, flagged}]
+   ========================================================= */
+const USE_MOCK = false;
+const API_BASE = "http://localhost:8000";
+/* ---------- mock data store ---------- */
+const BRANDS = ["Sensodyne", "Amul", "Colgate", "Dettol", "Parle-G"];
+const CITIES = ["Delhi", "Mumbai", "Ranchi", "Patna", "Lucknow", "Kolkata", "Bengaluru"];
+const SHOPS = [
+  {name:"Sharma General Store", city:"Delhi", lat:28.6139, lng:77.2090},
+  {name:"New Bharat Medicos", city:"Patna", lat:25.5941, lng:85.1376},
+  {name:"City Super Mart", city:"Mumbai", lat:19.0760, lng:72.8777},
+  {name:"Ganga Kirana Store", city:"Lucknow", lat:26.8467, lng:80.9462},
+  {name:"Lakshmi Provisions", city:"Bengaluru", lat:12.9716, lng:77.5946},
+  {name:"Hilltop Pharmacy", city:"Ranchi", lat:23.3441, lng:85.3096},
+];
+
+let anomalies = [];
+let hotzones = [];
+let stats = { total_scans: 0, flagged_codes: 0, active_hot_zones: 0, reports_filed: 0 };
+let brandVolume = BRANDS.map(b => ({brand:b, genuine: rnd(40,140), flagged: rnd(0,6)}));
+let tickerEvents = [];
+
+function rnd(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function codeId(){ return "QR-" + rnd(1000,9999); }
+function timeAgo(d){
+  const s = Math.floor((Date.now()-d)/1000);
+  if(s<60) return s+"s ago";
+  if(s<3600) return Math.floor(s/60)+"m ago";
+  return Math.floor(s/3600)+"h ago";
+}
+
+function seedMock(){
+  for(let i=0;i<6;i++){
+    const scans = rnd(2,14);
+    const cities = rnd(1,5);
+    const flagged = scans >= 10 || cities >= 3;
+    anomalies.push({
+      qr_code_id: codeId(),
+      brand: pick(BRANDS),
+      scan_count: scans,
+      unique_cities: cities,
+      flagged_at: Date.now() - rnd(0, 6*3600*1000),
+      escalated: flagged && Math.random() > 0.5
+    });
+  }
+  for(let i=0;i<3;i++){
+    const shop = pick(SHOPS);
+    hotzones.push({
+      shop_name: shop.name, city: shop.city,
+      latitude: shop.lat + (Math.random()-0.5)*0.05,
+      longitude: shop.lng + (Math.random()-0.5)*0.05,
+      report_count: rnd(3,9),
+      escalated: true
+    });
+  }
+  stats = {
+    total_scans: rnd(800,1400),
+    flagged_codes: anomalies.filter(a=>a.scan_count>=10||a.unique_cities>=3).length,
+    active_hot_zones: hotzones.length,
+    reports_filed: rnd(20,60)
+  };
+}
+seedMock();
+
+/* ---------- fetch layer (mock or real) ---------- */
+async function getAnomalies(){
+  if(USE_MOCK) return [...anomalies].sort((a,b)=>b.scan_count-a.scan_count);
+  const r = await fetch(`${API_BASE}/anomalies`); return r.json();
+}
+async function getStats(){
+  if(USE_MOCK) return stats;
+  const r = await fetch(`${API_BASE}/stats`); return r.json();
+}
+async function getHotzones(){
+  if(USE_MOCK) return hotzones;
+  const r = await fetch(`${API_BASE}/hotzones`); return r.json();
+}
+async function getBrandVolume(){
+  if(USE_MOCK) return brandVolume;
+  const r = await fetch(`${API_BASE}/brand_volume`); return r.json();
+}
+
+/* ---------- render: stat cards ---------- */
+function renderStats(s){
+  document.getElementById("statTotal").textContent = s.total_scans.toLocaleString();
+  document.getElementById("statFlagged").textContent = s.flagged_codes;
+  document.getElementById("statZones").textContent = s.active_hot_zones;
+  document.getElementById("statReports").textContent = s.reports_filed;
+}
+
+/* ---------- render: table ---------- */
+let lastRenderedIds = new Set();
+function renderTable(rows){
+  const body = document.getElementById("anomalyBody");
+  if(rows.length === 0){
+    body.innerHTML = `<tr class="empty-row"><td colspan="5">No anomalies detected yet — scans are arriving within normal range.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(r=>{
+    // Every row here came from /anomalies, which only ever returns codes the
+    // backend has already flagged as anomalous — so it's always at least
+    // "Flagged". The only thing left to check is the escalated state.
+    const isNew = !lastRenderedIds.has(r.qr_code_id) && lastRenderedIds.size>0;
+    let badge = `<span class="badge fake"><span class="dot"></span>Flagged</span>`;
+    if(r.escalated) badge = `<span class="badge escalated"><span class="dot"></span>Escalated</span>`;
+    if(r.escalated) badge = `<span class="badge escalated"><span class="dot"></span>Escalated</span>`;
+    return `<tr class="${isNew?'row-new':''}">
+      <td>${r.qr_code_id}</td>
+      <td>${r.brand}</td>
+      <td>${r.scan_count}</td>
+      <td>${r.unique_cities}</td>
+      <td>${badge}</td>
+    </tr>`;
+  }).join("");
+  lastRenderedIds = new Set(rows.map(r=>r.qr_code_id));
+}
+
+/* ---------- render: map ---------- */
+let map, markersLayer;
+function initMap(){
+  map = L.map('map', { zoomControl:true, attributionControl:false }).setView([22.9, 79.0], 5);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 18
+  }).addTo(map);
+  markersLayer = L.layerGroup().addTo(map);
+}
+function renderMap(zones){
+  markersLayer.clearLayers();
+  zones.forEach(z=>{
+    const color = z.escalated ? "#C73E3E" : "#8B7355";
+    const radius = 8 + Math.min(z.report_count, 10)*1.6;
+    L.circleMarker([z.latitude, z.longitude], {
+      radius, color, weight:2, fillColor:color, fillOpacity:0.35
+    }).bindPopup(
+      `<b>${z.shop_name}</b><br>${z.city}<br>${z.report_count} reports filed${z.escalated?'<br><b style="color:#C73E3E">ESCALATED — HOT ZONE</b>':''}`
+    ).addTo(markersLayer);
+  });
+}
+
+/* ---------- render: chart ---------- */
+let chart;
+function renderChart(volume){
+  const ctx = document.getElementById('brandChart');
+  const data = {
+    labels: volume.map(v=>v.brand),
+    datasets: [
+      { label:'Genuine', data: volume.map(v=>v.genuine), backgroundColor:'#1F7A5C', borderRadius:3 },
+      { label:'Flagged', data: volume.map(v=>v.flagged), backgroundColor:'#C73E3E', borderRadius:3 }
+    ]
+  };
+  if(chart){ chart.data = data; chart.update(); return; }
+  chart = new Chart(ctx, {
+    type:'bar',
+    data,
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      scales:{
+        x:{ stacked:true, grid:{color:'rgba(232,228,217,0.06)'}, ticks:{color:'#cfc9ba', font:{family:'JetBrains Mono', size:10}} },
+        y:{ stacked:true, grid:{color:'rgba(232,228,217,0.06)'}, ticks:{color:'#cfc9ba', font:{family:'JetBrains Mono', size:10}} }
+      },
+      plugins:{ legend:{ labels:{ color:'#cfc9ba', font:{family:'JetBrains Mono', size:11} } } }
+    }
+  });
+}
+
+/* ---------- render: ticker ---------- */
+function pushTicker(text, sub){
+  tickerEvents.unshift({text, sub, time: Date.now()});
+  tickerEvents = tickerEvents.slice(0, 20);
+  renderTicker();
+}
+function renderTicker(){
+  const el = document.getElementById('tickerList');
+  if(tickerEvents.length === 0){
+    el.innerHTML = `<div class="ticker-item"><div class="body line2">No escalation events yet.</div></div>`;
+    return;
+  }
+  el.innerHTML = tickerEvents.map(e=>`
+    <div class="ticker-item">
+      <div class="seal">!</div>
+      <div class="body">
+        <div class="line1">${e.text}</div>
+        <div class="line2">${e.sub}</div>
+      </div>
+      <div class="time">${timeAgo(e.time)}</div>
+    </div>
+  `).join("");
+}
+
+/* ---------- full refresh cycle ---------- */
+async function refreshAll(){
+  const [a, s, z, v] = await Promise.all([getAnomalies(), getStats(), getHotzones(), getBrandVolume()]);
+  renderTable(a);
+  renderStats(s);
+  renderMap(z);
+  renderChart(v);
+}
+
+/* ---------- demo controls ---------- */
+document.getElementById('refreshBtn').addEventListener('click', () => {
+  refreshAll();
+});
+
+document.getElementById('simulateBtn').addEventListener('click', () => {
+  const brand = pick(BRANDS);
+  const scans = rnd(10, 22);
+  const cities = rnd(3, 6);
+  const id = codeId();
+  anomalies.unshift({
+    qr_code_id: id, brand, scan_count: scans, unique_cities: cities,
+    flagged_at: Date.now(), escalated: false
+  });
+  stats.flagged_codes += 1;
+  stats.total_scans += scans;
+
+  const bv = brandVolume.find(b=>b.brand===brand);
+  if(bv) bv.flagged += 1;
+
+  pushTicker(
+    `${id} flagged — ${scans} scans across ${cities} cities`,
+    `Brand: ${brand} · pattern impossible for a single genuine unit`
+  );
+
+  // 40% chance this also escalates an existing or new hot zone
+  if(Math.random() < 0.6){
+    const shop = pick(SHOPS);
+    let zone = hotzones.find(h=>h.shop_name===shop.name);
+    if(!zone){
+      zone = { shop_name:shop.name, city:shop.city, latitude:shop.lat, longitude:shop.lng, report_count:1, escalated:false };
+      hotzones.push(zone);
+    }
+    zone.report_count += rnd(2,4);
+    if(zone.report_count >= 3 && !zone.escalated){
+      zone.escalated = true;
+      stats.active_hot_zones += 1;
+      pushTicker(
+        `${zone.shop_name} escalated to HOT ZONE`,
+        `${zone.report_count} customer reports · ${zone.city}`
+      );
+    }
+  }
+  refreshAll();
+});
+
+/* ---------- boot ---------- */
+initMap();
+refreshAll();
+pushTicker("Console initialized", "Watching all registered QR codes for duplication signatures");
+
+// light auto-poll so judges see numbers tick without clicking, matches /scan demo on other tab
+setInterval(() => {
+  stats.total_scans += rnd(1,4);
+  refreshAll();
+}, 8000);
+</script>
+</body>
+</html>

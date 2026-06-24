@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Shielding the Shelf — Report a Shop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Archivo+Expanded:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0B1210;
+    --ink-soft:#15201C;
+    --paper:#E8E4D9;
+    --card:#F4F1EA;
+    --green:#1F7A5C;
+    --green-dim:#16563F;
+    --red:#C73E3E;
+    --red-dim:#8C2A2A;
+    --brass:#8B7355;
+    --line: rgba(11,18,16,0.14);
+    --line-soft: rgba(232,228,217,0.12);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ink);
+    color:var(--paper);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    background-image:
+      radial-gradient(circle at 100% 0%, rgba(139,115,85,0.10), transparent 45%),
+      radial-gradient(circle at 0% 100%, rgba(31,122,92,0.08), transparent 45%);
+  }
+  a{color:inherit;text-decoration:none;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+
+  /* ===== Top bar (matches scanner / dashboard) ===== */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:18px 32px;
+    border-bottom:1px solid var(--line-soft);
+    position:sticky;top:0;z-index:50;
+    background:rgba(11,18,16,0.92);
+    backdrop-filter:blur(6px);
+  }
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand .mark{
+    width:34px;height:34px;border-radius:4px;
+    background:var(--brass);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px;
+    color:var(--ink);
+  }
+  .brand .name{
+    font-family:'Archivo Expanded',sans-serif;font-weight:800;
+    font-size:15px;letter-spacing:0.04em;text-transform:uppercase;
+  }
+  .brand .sub{
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--brass);
+    letter-spacing:0.08em;text-transform:uppercase;margin-top:2px;
+  }
+  nav{display:flex;gap:28px;}
+  nav a{
+    font-family:'JetBrains Mono',monospace;font-size:12px;
+    letter-spacing:0.06em;text-transform:uppercase;
+    color:rgba(232,228,217,0.55);
+    padding-bottom:4px;border-bottom:2px solid transparent;
+    transition:color .15s, border-color .15s;
+  }
+  nav a:hover{color:var(--paper);}
+  nav a.active{color:var(--paper);border-color:var(--brass);}
+
+  /* ===== Shell ===== */
+  .shell{max-width:720px;margin:0 auto;padding:40px 24px 80px;}
+  .eyebrow{
+    font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;
+    text-transform:uppercase;color:var(--brass);margin-bottom:10px;
+  }
+  h1{
+    font-family:'Archivo Expanded',sans-serif;font-weight:800;
+    font-size:28px;margin:0 0 10px;letter-spacing:0.01em;
+  }
+  .lede{
+    color:rgba(232,228,217,0.6);font-size:14.5px;line-height:1.6;
+    margin:0 0 28px;max-width:560px;
+  }
+
+  /* carried-over QR context strip */
+  .context-strip{
+    display:none;
+    align-items:center;gap:12px;
+    background:rgba(199,62,62,0.1);
+    border:1px solid var(--red-dim);
+    border-radius:8px;
+    padding:14px 16px;margin-bottom:26px;
+  }
+  .context-strip.show{display:flex;}
+  .context-strip .seal{
+    width:34px;height:34px;border-radius:50%;border:1.5px solid var(--red);
+    color:var(--red);display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:14px;flex-shrink:0;transform:rotate(-6deg);
+  }
+  .context-strip .text{font-size:12.5px;line-height:1.5;}
+  .context-strip .text b{color:#FFB3B3;}
+  .context-strip .code{font-family:'JetBrains Mono',monospace;color:var(--paper);}
+
+  /* ===== Form card ===== */
+  .card{
+    background:var(--card);color:var(--ink);
+    border-radius:10px;padding:28px;
+    border:1px solid rgba(11,18,16,0.06);
+  }
+  .field{margin-bottom:20px;}
+  label{
+    display:block;font-family:'JetBrains Mono',monospace;font-size:11px;
+    letter-spacing:0.05em;text-transform:uppercase;font-weight:600;
+    color:var(--brass);margin-bottom:7px;
+  }
+  .req{color:var(--red);}
+  input, textarea{
+    width:100%;padding:12px 14px;border-radius:6px;
+    border:1.5px solid rgba(11,18,16,0.16);
+    background:#fff;color:var(--ink);
+    font-family:'Inter',sans-serif;font-size:14px;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  input.mono-field{font-family:'JetBrains Mono',monospace;}
+  input:focus, textarea:focus{
+    outline:none;border-color:var(--brass);
+    box-shadow:0 0 0 3px rgba(139,115,85,0.15);
+  }
+  textarea{resize:vertical;min-height:80px;}
+  .hint-text{
+    font-size:11.5px;color:rgba(11,18,16,0.5);margin-top:6px;
+    font-family:'JetBrains Mono',monospace;
+  }
+
+  .geo-row{display:flex;gap:10px;align-items:flex-start;}
+  .geo-row input{flex:1;}
+  .geo-btn{
+    flex-shrink:0;white-space:nowrap;
+    padding:12px 16px;border-radius:6px;border:1.5px solid var(--ink);
+    background:var(--ink);color:var(--card);
+    font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:600;
+    cursor:pointer;letter-spacing:0.03em;text-transform:uppercase;
+    transition:background .15s;
+  }
+  .geo-btn:hover{background:#1d2b26;}
+  .geo-status{
+    font-family:'JetBrains Mono',monospace;font-size:11px;margin-top:6px;
+    color:var(--green-dim);
+  }
+  .geo-status.err{color:var(--red);}
+
+  .submit-row{display:flex;align-items:center;gap:14px;margin-top:8px;}
+  .btn-submit{
+    flex:1;padding:14px 20px;border-radius:6px;border:none;
+    background:var(--red);color:var(--card);
+    font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;
+    letter-spacing:0.04em;text-transform:uppercase;cursor:pointer;
+    transition:background .15s, transform .1s;
+  }
+  .btn-submit:hover{background:#a93434;}
+  .btn-submit:active{transform:scale(0.99);}
+  .btn-submit:disabled{background:rgba(11,18,16,0.25);cursor:not-allowed;}
+
+  /* ===== Result stamp ===== */
+  .result{
+    display:none;margin-top:24px;border-radius:10px;
+    padding:24px;text-align:center;
+    border:2px solid var(--green);
+    background:rgba(31,122,92,0.08);
+  }
+  .result.show{display:block;animation:stamp-in .35s ease-out;}
+  .result.escalated{border-color:var(--red);background:rgba(199,62,62,0.08);}
+  @keyframes stamp-in{
+    0%{opacity:0;transform:scale(1.15) rotate(-4deg);}
+    100%{opacity:1;transform:scale(1) rotate(-2deg);}
+  }
+  .result .stamp-label{
+    font-family:'Archivo Expanded',sans-serif;font-weight:800;
+    font-size:19px;letter-spacing:0.04em;text-transform:uppercase;
+    color:var(--green);margin-bottom:8px;
+  }
+  .result.escalated .stamp-label{color:var(--red);}
+  .result .detail{
+    font-family:'JetBrains Mono',monospace;font-size:12.5px;
+    color:rgba(232,228,217,0.7);line-height:1.6;
+  }
+  .result .count{
+    font-family:'JetBrains Mono',monospace;font-weight:700;font-size:22px;
+    color:var(--paper);display:block;margin:10px 0 4px;
+  }
+
+  footer{
+    text-align:center;padding:30px 0 10px;
+    font-family:'JetBrains Mono',monospace;font-size:11px;
+    color:rgba(232,228,217,0.3);
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="mark">SS</div>
+    <div>
+      <div class="name">Shielding the Shelf</div>
+      <div class="sub">Anomaly Surveillance Console</div>
+    </div>
+  </div>
+  <nav>
+    <a href="index.html">Scanner</a>
+    <a href="dashboard.html">Dashboard</a>
+    <a href="report.html" class="active">Report</a>
+  </nav>
+</div>
+
+<div class="shell">
+  <h1>Report a suspicious shop</h1>
+  <p class="lede">If a product flashed red on the scanner, tell us where it was bought. Once three or more customers report the same shop, it auto-escalates into a hot zone on the surveillance dashboard.</p>
+
+  <div class="context-strip" id="contextStrip">
+    <div class="seal">!</div>
+    <div class="text">
+      Carried over from scanner: <b>likely counterfeit</b> result for code
+      <span class="code" id="contextCode">—</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <form id="reportForm">
+      <div class="field">
+        <label>QR code id <span class="req">*</span></label>
+        <input type="text" id="qrCode" class="mono-field" placeholder="e.g. SENS-FAKE-01" required />
+        <div class="hint-text">Pre-filled automatically if you arrived from a flagged scan.</div>
+      </div>
+
+      <div class="field">
+        <label>Shop name <span class="req">*</span></label>
+        <input type="text" id="shopName" placeholder="e.g. Sharma General Store" required />
+      </div>
+
+      <div class="field">
+        <label>City / area <span class="req">*</span></label>
+        <input type="text" id="shopCity" placeholder="e.g. Ranchi, Jharkhand" required />
+      </div>
+
+      <div class="field">
+        <label>Shop location (GPS)</label>
+        <div class="geo-row">
+          <input type="text" id="shopLocation" class="mono-field" placeholder="latitude, longitude" readonly />
+          <button type="button" class="geo-btn" id="geoBtn">📍 Use my location</button>
+        </div>
+        <div class="geo-status" id="geoStatus">Tap to capture the shop's coordinates for the map.</div>
+      </div>
+
+      <div class="field">
+        <label>Notes (optional)</label>
+        <textarea id="notes" placeholder="Anything that helps — packaging looked off, price was unusually low, etc."></textarea>
+      </div>
+
+      <div class="submit-row">
+        <button type="submit" class="btn-submit" id="submitBtn">Submit report</button>
+      </div>
+    </form>
+
+    <div class="result" id="resultBox">
+      <div class="stamp-label" id="resultLabel">Report logged</div>
+      <span class="count" id="resultCount">1</span>
+      <div class="detail" id="resultDetail">report on file for this shop.</div>
+    </div>
+  </div>
+</div>
+
+<footer>SHIELDING THE SHELF — crowd-sourced QR duplication detection · mock telemetry, demo build</footer>
+
+<script>
+/* =========================================================
+   API CONTRACT — swap USE_MOCK to false once backend is live
+   POST /report
+     Request:  { qr_code_id, shop_name, shop_city, latitude, longitude, notes }
+     Response: { status: "logged" | "escalated", report_count }
+   ========================================================= */
+const USE_MOCK = false;
+const API_BASE = "http://localhost:8000";
+/* ---------- pick up context from scanner page ---------- */
+const params = new URLSearchParams(window.location.search);
+const carriedCode =
+params.get("qr")
+||
+params.get("qr_code_id")
+||
+params.get("code");if(carriedCode){
+  document.getElementById("qrCode").value = carriedCode;
+  document.getElementById("contextCode").textContent = carriedCode;
+  document.getElementById("contextStrip").classList.add("show");
+}
+
+/* ---------- geolocation ---------- */
+const geoBtn = document.getElementById("geoBtn");
+const geoStatus = document.getElementById("geoStatus");
+const locationField = document.getElementById("shopLocation");
+let capturedLat = null, capturedLng = null;
+
+geoBtn.addEventListener("click", () => {
+  if(!navigator.geolocation){
+    geoStatus.textContent = "Geolocation not supported on this device — type the address in Notes instead.";
+    geoStatus.classList.add("err");
+    return;
+  }
+  geoStatus.textContent = "Requesting location…";
+  geoStatus.classList.remove("err");
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      capturedLat = pos.coords.latitude;
+      capturedLng = pos.coords.longitude;
+      locationField.value = `${capturedLat.toFixed(5)}, ${capturedLng.toFixed(5)}`;
+      geoStatus.textContent = "Location captured.";
+      geoStatus.classList.remove("err");
+    },
+    (err) => {
+      geoStatus.textContent = "Couldn't get location — you can still submit without it.";
+      geoStatus.classList.add("err");
+    },
+    { enableHighAccuracy: true, timeout: 8000 }
+  );
+});
+
+/* ---------- mock report store (shared per-session) ---------- */
+const reportCounts = {}; // shop_name|city -> count
+
+async function submitReport(payload){
+  if(USE_MOCK){
+    await new Promise(r => setTimeout(r, 600)); // simulate network delay
+    const key = `${payload.shop_name.trim().toLowerCase()}|${payload.shop_city.trim().toLowerCase()}`;
+    reportCounts[key] = (reportCounts[key] || 0) + 1;
+    const count = reportCounts[key];
+    return {
+      status: count >= 3 ? "escalated" : "logged",
+      report_count: count
+    };
+  }
+  const res = await fetch(`${API_BASE}/report`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return res.json();
+}
+
+/* ---------- form submit ---------- */
+const form = document.getElementById("reportForm");
+const submitBtn = document.getElementById("submitBtn");
+const resultBox = document.getElementById("resultBox");
+const resultLabel = document.getElementById("resultLabel");
+const resultCount = document.getElementById("resultCount");
+const resultDetail = document.getElementById("resultDetail");
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Submitting…";
+
+  const payload = {
+    qr_code_id: document.getElementById("qrCode").value.trim(),
+    shop_name: document.getElementById("shopName").value.trim(),
+    shop_city: document.getElementById("shopCity").value.trim(),
+    latitude: capturedLat,
+    longitude: capturedLng,
+    notes: document.getElementById("notes").value.trim()
+  };
+
+  try{
+    const response = await submitReport(payload);
+    resultBox.classList.remove("escalated");
+    resultBox.classList.add("show");
+
+    if(response.status === "escalated"){
+      resultBox.classList.add("escalated");
+      resultLabel.textContent = "Hot zone escalated";
+      resultCount.textContent = response.report_count;
+      resultDetail.textContent = `reports filed for "${payload.shop_name}" — this shop is now flagged on the surveillance dashboard.`;
+    } else {
+      resultLabel.textContent = "Report logged";
+      resultCount.textContent = response.report_count;
+      resultDetail.textContent = `report on file for "${payload.shop_name}". It escalates to a hot zone once 3 reports come in.`;
+    }
+  } catch(err){
+    resultBox.classList.add("show");
+    resultLabel.textContent = "Something went wrong";
+    resultCount.textContent = "—";
+    resultDetail.textContent = "Couldn't reach the server. Check your connection and try again.";
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Submit report";
+  }
+});
+</script>
+</body>
+</html>
