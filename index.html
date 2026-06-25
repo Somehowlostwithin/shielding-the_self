@@ -14,6 +14,10 @@
     --card: #F7F4EA;
     --verified: #1F7A5C;
     --verified-dark: #0F4A37;
+    --warning: #B8923D;
+    --warning-dark: #6E5520;
+    --caution: #C76A2E;
+    --caution-dark: #7A3D17;
     --alert: #B23A2E;
     --alert-dark: #6E1F17;
     --brass: #8B6F3F;
@@ -263,6 +267,8 @@
   }
 
   .result-card.verified { border-color: var(--verified); background: #E9F2EC; }
+  .result-card.warning  { border-color: var(--warning); background: #F7F0E1; }
+  .result-card.caution  { border-color: var(--caution); background: #F8E9DD; }
   .result-card.flagged  { border-color: var(--alert); background: #F6E9E6; }
 
   .result-head {
@@ -287,6 +293,12 @@
 
   .result-card.verified .seal,
   .result-card.verified .result-title { color: var(--verified-dark); }
+
+  .result-card.warning .seal,
+  .result-card.warning .result-title { color: var(--warning-dark); }
+
+  .result-card.caution .seal,
+  .result-card.caution .result-title { color: var(--caution-dark); }
 
   .result-card.flagged .seal,
   .result-card.flagged .result-title { color: var(--alert-dark); }
@@ -601,18 +613,48 @@
     return data;
   }
 
+  const LEVEL_CONFIG = {
+    SAFE: {
+      cardClass: "verified",
+      icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>',
+      title: "Genuine product",
+      sub: "No anomalies detected in scan history",
+      showReason: false,
+      showReport: false,
+    },
+    WARNING: {
+      cardClass: "warning",
+      icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 2.7 17a1.9 1.9 0 0 0 1.6 2.9h15.4a1.9 1.9 0 0 0 1.6-2.9L13.7 3.9a1.9 1.9 0 0 0-3.4 0Z"/></svg>',
+      title: "Worth watching",
+      sub: "Scanned more than once — likely still fine",
+      showReason: true,
+      showReport: false,
+    },
+    CAUTION: {
+      cardClass: "caution",
+      icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 2.7 17a1.9 1.9 0 0 0 1.6 2.9h15.4a1.9 1.9 0 0 0 1.6-2.9L13.7 3.9a1.9 1.9 0 0 0-3.4 0Z"/></svg>',
+      title: "Approaching the limit",
+      sub: "One more scan will flag this as counterfeit",
+      showReason: true,
+      showReport: false,
+    },
+    FAKE: {
+      cardClass: "flagged",
+      icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 2.7 17a1.9 1.9 0 0 0 1.6 2.9h15.4a1.9 1.9 0 0 0 1.6-2.9L13.7 3.9a1.9 1.9 0 0 0-3.4 0Z"/></svg>',
+      title: "Likely counterfeit",
+      sub: "Scan pattern is inconsistent with a single unit",
+      showReason: true,
+      showReport: true,
+    },
+  };
+
   function renderResult(data, scannedCode) {
-    const isFake = data.status === "FAKE";
-    resultCard.className = "result-card show " + (isFake ? "flagged" : "verified");
+    const config = LEVEL_CONFIG[data.status] || LEVEL_CONFIG.SAFE;
 
-    el('resultSeal').innerHTML = isFake
-      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 2.7 17a1.9 1.9 0 0 0 1.6 2.9h15.4a1.9 1.9 0 0 0 1.6-2.9L13.7 3.9a1.9 1.9 0 0 0-3.4 0Z"/></svg>'
-      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>';
-
-    el('resultTitle').textContent = isFake ? "Likely counterfeit" : "Genuine product";
-    el('resultSub').textContent = isFake
-      ? "Scan pattern is inconsistent with a single unit"
-      : "No anomalies detected in scan history";
+    resultCard.className = "result-card show " + config.cardClass;
+    el('resultSeal').innerHTML = config.icon;
+    el('resultTitle').textContent = config.title;
+    el('resultSub').textContent = config.sub;
 
     el('dBrand').textContent = data.brand;
     el('dBatch').textContent = data.batch_number || scannedCode;
@@ -620,19 +662,20 @@
     el('dScans').textContent = `${data.scan_count} scans · ${data.unique_cities} cities`;
 
     const reasonBox = el('reasonBox');
-    if (isFake) {
+    if (config.showReason) {
       reasonBox.style.display = 'block';
       reasonBox.textContent = data.reason;
     } else {
       reasonBox.style.display = 'none';
     }
 
-    el('btnReport').className = 'btn-report' + (isFake ? ' show' : '');
+    el('btnReport').className = 'btn-report' + (config.showReport ? ' show' : '');
     // Use the QR code that was actually scanned, not data.batch_number —
     // the backend's batch_number is a product attribute, not guaranteed to
     // equal the scanned code, and report.html needs the real qr_code_id.
     resultCard.dataset.qr = scannedCode;
   }
+
 
   async function handleScan(qrCode) {
     if (!qrCode || !qrCode.trim()) {

@@ -203,6 +203,8 @@
   }
   .badge.fake{background:rgba(199,62,62,0.16);color:#E08B8B;}
   .badge.escalated{background:rgba(199,62,62,0.28);color:#FFB3B3;}
+  .badge.warning{background:rgba(184,146,61,0.18);color:#E0C285;}
+  .badge.caution{background:rgba(199,106,46,0.2);color:#F0A874;}
   .badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
   .row-new{animation:flash 1.4s ease-out;}
   @keyframes flash{
@@ -244,9 +246,67 @@
     .grid, .grid2{grid-template-columns:1fr;}
     nav{display:none;}
   }
+  /* ===== Lock overlay ===== */
+  .lock-overlay{
+    position:fixed; inset:0; z-index:200;
+    background:rgba(11,18,16,0.97);
+    display:flex; align-items:center; justify-content:center;
+    padding:24px;
+  }
+  .lock-overlay:not(.show){ display:none; }
+  .lock-card{
+    width:100%; max-width:380px;
+    background:var(--card); color:var(--ink);
+    border-radius:10px; padding:32px;
+    text-align:center;
+    border:1px solid rgba(11,18,16,0.06);
+  }
+  .lock-mark{
+    width:44px;height:44px;border-radius:8px;margin:0 auto 18px;
+    background:var(--brass);color:var(--ink);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'JetBrains Mono',monospace;font-weight:700;font-size:15px;
+  }
+  .lock-card h2{
+    font-family:'Archivo Expanded',sans-serif;font-weight:800;
+    font-size:18px;margin:0 0 8px;
+  }
+  .lock-card p{
+    font-size:12.5px;color:rgba(11,18,16,0.55);
+    margin:0 0 20px;line-height:1.5;
+  }
+  .lock-card input{
+    width:100%;padding:12px 14px;margin-bottom:12px;
+    border-radius:6px;border:1.5px solid rgba(11,18,16,0.16);
+    font-family:'JetBrains Mono',monospace;font-size:14px;
+    background:#fff;color:var(--ink);
+  }
+  .lock-card input:focus{ outline:none;border-color:var(--brass); }
+  .lock-card button{
+    width:100%;padding:12px;border-radius:6px;border:none;
+    background:var(--red);color:var(--card);
+    font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;
+    letter-spacing:0.04em;text-transform:uppercase;cursor:pointer;
+  }
+  .lock-card button:hover{ background:#a93434; }
+  .lock-error{
+    margin-top:12px;font-size:11.5px;color:var(--red);
+    font-family:'JetBrains Mono',monospace;min-height:14px;
+  }
 </style>
 </head>
 <body>
+
+<div class="lock-overlay" id="lockOverlay">
+  <form class="lock-card" id="lockForm">
+    <div class="lock-mark">SS</div>
+    <h2>Admin access required</h2>
+    <p>This dashboard shows live scan, report, and hot-zone data. Enter the admin key to continue.</p>
+    <input type="password" id="lockInput" placeholder="Admin key" autocomplete="off" autofocus />
+    <button type="submit">Unlock dashboard</button>
+    <div class="lock-error" id="lockError"></div>
+  </form>
+</div>
 
 <div class="topbar">
   <div class="brand">
@@ -423,22 +483,39 @@ function seedMock(){
 }
 seedMock();
 
+/* ---------- admin auth ---------- */
+function getAdminKey(){
+  return sessionStorage.getItem('admin_key') || '';
+}
+
+async function authedFetch(path){
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { 'X-Admin-Key': getAdminKey() }
+  });
+  if(res.status === 401){
+    sessionStorage.removeItem('admin_key');
+    showLockScreen('Session expired or key changed — please re-enter the admin key.');
+    throw new Error('unauthorized');
+  }
+  return res.json();
+}
+
 /* ---------- fetch layer (mock or real) ---------- */
 async function getAnomalies(){
   if(USE_MOCK) return [...anomalies].sort((a,b)=>b.scan_count-a.scan_count);
-  const r = await fetch(`${API_BASE}/anomalies`); return r.json();
+  return authedFetch('/anomalies');
 }
 async function getStats(){
   if(USE_MOCK) return stats;
-  const r = await fetch(`${API_BASE}/stats`); return r.json();
+  return authedFetch('/stats');
 }
 async function getHotzones(){
   if(USE_MOCK) return hotzones;
-  const r = await fetch(`${API_BASE}/hotzones`); return r.json();
+  return authedFetch('/hotzones');
 }
 async function getBrandVolume(){
   if(USE_MOCK) return brandVolume;
-  const r = await fetch(`${API_BASE}/brand_volume`); return r.json();
+  return authedFetch('/brand_volume');
 }
 
 /* ---------- render: stat cards ---------- */
@@ -458,13 +535,23 @@ function renderTable(rows){
     return;
   }
   body.innerHTML = rows.map(r=>{
-    // Every row here came from /anomalies, which only ever returns codes the
-    // backend has already flagged as anomalous — so it's always at least
-    // "Flagged". The only thing left to check is the escalated state.
+    // Every row here came from /anomalies, which only returns codes the
+    // backend marked WARNING, CAUTION, or FAKE (SAFE codes never appear).
     const isNew = !lastRenderedIds.has(r.qr_code_id) && lastRenderedIds.size>0;
-    let badge = `<span class="badge fake"><span class="dot"></span>Flagged</span>`;
-    if(r.escalated) badge = `<span class="badge escalated"><span class="dot"></span>Escalated</span>`;
-    if(r.escalated) badge = `<span class="badge escalated"><span class="dot"></span>Escalated</span>`;
+
+    let badge;
+    if (r.escalated) {
+      badge = `<span class="badge escalated"><span class="dot"></span>Escalated</span>`;
+    } else if (r.level === "FAKE") {
+      badge = `<span class="badge fake"><span class="dot"></span>Flagged</span>`;
+    } else if (r.level === "CAUTION") {
+      badge = `<span class="badge caution"><span class="dot"></span>Caution</span>`;
+    } else if (r.level === "WARNING") {
+      badge = `<span class="badge warning"><span class="dot"></span>Warning</span>`;
+    } else {
+      badge = `<span class="badge fake"><span class="dot"></span>Flagged</span>`;
+    }
+
     return `<tr class="${isNew?'row-new':''}">
       <td>${r.qr_code_id}</td>
       <td>${r.brand}</td>
@@ -479,6 +566,7 @@ function renderTable(rows){
 /* ---------- render: map ---------- */
 let map, markersLayer;
 function initMap(){
+  if (map) return; // already initialized — Leaflet throws if you call this twice
   map = L.map('map', { zoomControl:true, attributionControl:false }).setView([22.9, 79.0], 5);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     maxZoom: 18
@@ -550,11 +638,15 @@ function renderTicker(){
 
 /* ---------- full refresh cycle ---------- */
 async function refreshAll(){
-  const [a, s, z, v] = await Promise.all([getAnomalies(), getStats(), getHotzones(), getBrandVolume()]);
-  renderTable(a);
-  renderStats(s);
-  renderMap(z);
-  renderChart(v);
+  try {
+    const [a, s, z, v] = await Promise.all([getAnomalies(), getStats(), getHotzones(), getBrandVolume()]);
+    renderTable(a);
+    renderStats(s);
+    renderMap(z);
+    renderChart(v);
+  } catch (e) {
+    // authedFetch already re-shows the lock screen on a 401 — nothing more to do here.
+  }
 }
 
 /* ---------- demo controls ---------- */
@@ -603,16 +695,78 @@ document.getElementById('simulateBtn').addEventListener('click', () => {
   refreshAll();
 });
 
+/* ---------- admin lock screen ---------- */
+let pollInterval = null;
+
+function startPolling(){
+  if (pollInterval) return;
+  pollInterval = setInterval(() => {
+    stats.total_scans += rnd(1,4);
+    refreshAll();
+  }, 8000);
+}
+
+function stopPolling(){
+  if (pollInterval){ clearInterval(pollInterval); pollInterval = null; }
+}
+
+function showLockScreen(message){
+  stopPolling();
+  document.getElementById('lockOverlay').classList.add('show');
+  document.getElementById('lockError').textContent = message || '';
+  const input = document.getElementById('lockInput');
+  input.value = '';
+  input.focus();
+}
+
+function hideLockScreen(){
+  document.getElementById('lockOverlay').classList.remove('show');
+}
+
+async function tryUnlock(key){
+  try {
+    const res = await fetch(`${API_BASE}/stats`, { headers: { 'X-Admin-Key': key } });
+    if (res.ok){
+      sessionStorage.setItem('admin_key', key);
+      hideLockScreen();
+      initMap();
+      refreshAll();
+      startPolling();
+      return true;
+    }
+    sessionStorage.removeItem('admin_key');
+    showLockScreen('Incorrect admin key — try again.');
+    return false;
+  } catch (e){
+    sessionStorage.removeItem('admin_key');
+    showLockScreen('Could not reach the server — check your connection.');
+    return false;
+  }
+}
+
+document.getElementById('lockForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const key = document.getElementById('lockInput').value.trim();
+  if (!key) return;
+  tryUnlock(key);
+});
+
 /* ---------- boot ---------- */
-initMap();
-refreshAll();
 pushTicker("Console initialized", "Watching all registered QR codes for duplication signatures");
 
-// light auto-poll so judges see numbers tick without clicking, matches /scan demo on other tab
-setInterval(() => {
-  stats.total_scans += rnd(1,4);
+if (USE_MOCK){
+  // no auth needed on the mock/demo path — straight to the dashboard
+  initMap();
   refreshAll();
-}, 8000);
+  startPolling();
+} else {
+  const existingKey = getAdminKey();
+  if (existingKey){
+    tryUnlock(existingKey); // silently re-validate whatever's already stored
+  } else {
+    showLockScreen();
+  }
+}
 </script>
 </body>
 </html>
