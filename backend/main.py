@@ -11,9 +11,10 @@ Then in each frontend file (index.html, dashboard.html, report.html):
     API_BASE = "http://localhost:8000"
 """
 
+import os
 from datetime import datetime
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -27,6 +28,20 @@ from database import Base, engine, get_db
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Shielding the Shelf API")
+
+# ============================================================
+# Admin auth — protects the dashboard's data endpoints.
+# Set a real secret in Render: Dashboard -> your service -> Environment
+# -> add ADMIN_KEY = <something only you and your team know>.
+# Locally it falls back to "changeme123" so dev still works without setup —
+# but ALWAYS set a real ADMIN_KEY on Render before sharing the dashboard URL.
+# ============================================================
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "changeme123")
+
+
+def verify_admin(x_admin_key: str = Header(None)):
+    if not x_admin_key or x_admin_key != ADMIN_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing admin key.")
 
 
 @app.on_event("startup")
@@ -92,30 +107,39 @@ def scan_qr(payload: schemas.ScanRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_scan)
 
-    is_anomalous, scan_count, unique_cities, trigger = logic.evaluate_anomaly(db, payload.qr_code_id)
+    level, scan_count, unique_cities, trigger = logic.evaluate_anomaly(db, payload.qr_code_id)
 
-    new_scan.is_anomalous = is_anomalous
+    # only the hard FAKE level counts toward the "flagged" bucket in the brand chart —
+    # WARNING/CAUTION are softer signals, not a confirmed counterfeit call yet
+    new_scan.is_anomalous = (level == "FAKE")
     db.commit()
 
     if trigger == "multi_city":
-        status = "FAKE"
         reason = (
             f"This code has now been scanned from {unique_cities} different cities — "
             f"a single genuine product cannot physically be in more than one place. "
             f"Likely a duplicated QR code."
         )
     elif trigger == "city_limit":
-        status = "FAKE"
         reason = (
             f"Scanned {scan_count} times in the same city — beyond the "
             f"{logic.SAME_CITY_SCAN_LIMIT}-scan limit expected for a single genuine unit."
         )
+    elif level == "CAUTION":
+        reason = (
+            f"This is the {scan_count}rd time this exact code has been scanned in this city. "
+            f"One more scan will flag it as counterfeit — keep an eye on this product."
+        )
+    elif level == "WARNING":
+        reason = (
+            f"This is the {scan_count}nd time this exact code has been scanned. "
+            f"Still within normal range, but worth watching."
+        )
     else:
-        status = "SAFE"
         reason = "Scan pattern is within normal range for a genuine product."
 
     return schemas.ScanResponse(
-        status=status,
+        status=level,
         product_name=product.product_name,
         brand=product.brand,
         batch_number=product.batch_number,
@@ -178,13 +202,13 @@ def report_shop(payload: schemas.ReportRequest, db: Session = Depends(get_db)):
 # GET /anomalies — flagged QR codes, for the dashboard table
 # ============================================================
 @app.get("/anomalies", response_model=list[schemas.AnomalyItem])
-def get_anomalies(db: Session = Depends(get_db)):
+def get_anomalies(db: Session = Depends(get_db), _: None = Depends(verify_admin)):
     all_codes = db.query(models.Scan.qr_code_id).distinct().all()
 
     results = []
     for (qr_code_id,) in all_codes:
-        is_anomalous, scan_count, unique_cities, trigger = logic.evaluate_anomaly(db, qr_code_id)
-        if not is_anomalous:
+        level, scan_count, unique_cities, trigger = logic.evaluate_anomaly(db, qr_code_id)
+        if level == "SAFE":
             continue
 
         product = (
@@ -214,6 +238,7 @@ def get_anomalies(db: Session = Depends(get_db)):
                 scan_count=scan_count,
                 unique_cities=unique_cities,
                 flagged_at=latest_scan.timestamp if latest_scan else datetime.utcnow(),
+                level=level,
                 escalated=escalated,
             )
         )
@@ -226,7 +251,7 @@ def get_anomalies(db: Session = Depends(get_db)):
 # GET /hotzones — aggregated reports per shop, for the map
 # ============================================================
 @app.get("/hotzones", response_model=list[schemas.HotZoneItem])
-def get_hotzones(db: Session = Depends(get_db)):
+def get_hotzones(db: Session = Depends(get_db), _: None = Depends(verify_admin)):
     rows = (
         db.query(
             models.Report.shop_name,
@@ -256,9 +281,11 @@ def get_hotzones(db: Session = Depends(get_db)):
 # GET /stats — summary numbers for the dashboard stat cards
 # ============================================================
 @app.get("/stats", response_model=schemas.StatsResponse)
-def get_stats(db: Session = Depends(get_db)):
+def get_stats(db: Session = Depends(get_db), _: None = Depends(verify_admin)):
     total_scans = db.query(models.Scan).count()
-    flagged_codes = len(get_anomalies(db))
+    # only count true FAKE-level codes here — WARNING/CAUTION are softer
+    # signals shown in the anomaly table, not confirmed counterfeits
+    flagged_codes = len([a for a in get_anomalies(db) if a.level == "FAKE"])
     active_hot_zones = len([h for h in get_hotzones(db) if h.escalated])
     reports_filed = db.query(models.Report).count()
 
@@ -274,7 +301,7 @@ def get_stats(db: Session = Depends(get_db)):
 # GET /brand_volume — genuine vs flagged scans per brand, for the chart
 # ============================================================
 @app.get("/brand_volume", response_model=list[schemas.BrandVolumeItem])
-def get_brand_volume(db: Session = Depends(get_db)):
+def get_brand_volume(db: Session = Depends(get_db), _: None = Depends(verify_admin)):
     products = db.query(models.Product).all()
     totals = {}  # brand -> {"genuine": int, "flagged": int}
 
@@ -300,8 +327,6 @@ def get_brand_volume(db: Session = Depends(get_db)):
 # mounted at "/" only catches paths that don't match an explicit route
 # declared above it, so /scan, /report, /api/health etc. all keep working.
 # ============================================================
-import os
-
 from fastapi.staticfiles import StaticFiles
 
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")

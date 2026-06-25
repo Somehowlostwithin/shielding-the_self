@@ -51,6 +51,7 @@ class AnomalyItem(BaseModel):
     scan_count: int
     unique_cities: int
     flagged_at: datetime
+    level: str  # "WARNING" | "CAUTION" | "FAKE"
     escalated: bool
 
 
